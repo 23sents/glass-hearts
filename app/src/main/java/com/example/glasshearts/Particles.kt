@@ -14,7 +14,7 @@ import kotlin.random.Random
 /** Uniform float in [from, until). */
 internal fun Random.nextFloat(from: Float, until: Float): Float = from + nextFloat() * (until - from)
 
-/** A pooled sprite particle. kind 0 = rising heart (sways), kind 1 = burst / trail heart (ballistic). */
+/** A pooled sprite particle. kind 0 = rising heart (sways), 1 = burst / trail heart (ballistic), 2 = scattered sideways (flies off and fades). */
 class Particle {
     var active = false
     var kind = 0
@@ -81,13 +81,48 @@ class ParticleSystem(capacity: Int) {
         p.swayAmp = 0f; p.swayFreq = 0f; p.phase = 0f
     }
 
+    /** Sends every live heart flying sideways (away from the vertical centre line) - used by the shake gesture. */
+    fun scatter(centerX: Float, dens: Float, rnd: Random) {
+        for (p in items) {
+            if (!p.active) continue
+            val dir = if (p.x < centerX) -1f else 1f
+            p.kind = 2
+            p.baseX = p.x
+            p.vx = dir * dens * rnd.nextFloat(500f, 1100f)
+            p.vy = dens * rnd.nextFloat(-160f, 120f)
+            p.ay = dens * 40f
+            p.vr = dir * rnd.nextFloat(200f, 600f)
+            p.life = 0f
+            p.maxLife = rnd.nextFloat(0.9f, 1.5f)
+            p.swayAmp = 0f
+        }
+    }
+
+    /** Fresh hearts thrown left and right from a point. */
+    fun spawnSideBurst(x: Float, y: Float, count: Int, dens: Float, rnd: Random, spriteCount: Int) {
+        for (i in 0 until count) {
+            val p = obtain() ?: return
+            val side = if (i % 2 == 0) -1f else 1f
+            p.active = true; p.kind = 2
+            p.baseX = x; p.x = x; p.y = y
+            p.vx = side * dens * rnd.nextFloat(350f, 900f)
+            p.vy = dens * rnd.nextFloat(-380f, 60f)
+            p.ay = dens * 60f
+            p.size = dens * rnd.nextFloat(16f, 40f)
+            p.rot = rnd.nextFloat(-40f, 40f); p.vr = side * rnd.nextFloat(200f, 600f)
+            p.life = 0f; p.maxLife = rnd.nextFloat(1.0f, 1.6f)
+            p.sprite = rnd.nextInt(spriteCount)
+            p.swayAmp = 0f; p.swayFreq = 0f; p.phase = 0f
+        }
+    }
+
     fun update(dt: Float, t: Float) {
         for (p in items) {
             if (!p.active) continue
             p.life += dt
             if (p.life >= p.maxLife) { p.active = false; continue }
-            if (p.kind == 1) {
-                val drag = max(0f, 1f - 2.2f * dt)
+            if (p.kind != 0) {
+                val drag = max(0f, 1f - (if (p.kind == 1) 2.2f else 0.7f) * dt)
                 p.vx *= drag
                 p.vy = p.vy * drag + p.ay * dt
             }
@@ -98,18 +133,30 @@ class ParticleSystem(capacity: Int) {
         }
     }
 
-    fun draw(c: Canvas, sprites: Array<android.graphics.Bitmap>, paint: Paint, kind: Int) {
-        for (p in items) {
-            if (!p.active || p.kind != kind) continue
+    /**
+     * @param front draws kinds 1 and 2 when true, kind 0 (behind the big heart) when false
+     * @param jitter 0..1 shake intensity: hearts tremble while the phone is shaken
+     */
+    fun draw(c: Canvas, sprites: Array<android.graphics.Bitmap>, paint: Paint, front: Boolean,
+             t: Float, jitter: Float, dens: Float) {
+        for (i in items.indices) {
+            val p = items[i]
+            if (!p.active || (p.kind != 0) != front) continue
             val u = p.life / p.maxLife
-            val alpha = min(1f, u / 0.12f) * min(1f, (1f - u) / 0.30f)
+            val alpha = if (p.kind == 2) min(1f, (p.maxLife - p.life) / 0.45f)
+                        else min(1f, u / 0.12f) * min(1f, (1f - u) / 0.30f)
             if (alpha <= 0.01f) continue
             val bmp = sprites[p.sprite]
-            val scale = p.size * (if (kind == 1) 0.6f + 0.4f * (1f - u) else 1f) / bmp.width
+            val jit = if (p.kind == 2) 0f else jitter
+            val jx = sin(t * 47f + i * 1.7f) * dens * 7f * jit
+            val jy = cos(t * 53f + i * 2.3f) * dens * 7f * jit
+            val jr = sin(t * 61f + i) * 14f * jit
+            val shrink = if (p.kind == 1) 0.6f + 0.4f * (1f - u) else 1f
+            val scale = p.size * shrink * (1f + 0.15f * jit * sin(t * 40f + i)) / bmp.width
             paint.alpha = (alpha * 255f).toInt()
             c.save()
-            c.translate(p.x, p.y)
-            c.rotate(p.rot)
+            c.translate(p.x + jx, p.y + jy)
+            c.rotate(p.rot + jr)
             c.scale(scale, scale)
             c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, paint)
             c.restore()

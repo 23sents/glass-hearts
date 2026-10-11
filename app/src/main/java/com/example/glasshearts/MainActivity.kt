@@ -52,7 +52,9 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
-        scene.setTilt(-event.values[0] / GRAVITY, event.values[1] / GRAVITY - 0.6f)
+        val v = event.values
+        scene.setTilt(-v[0] / GRAVITY, v[1] / GRAVITY - 0.6f)
+        scene.onAcceleration(v[0], v[1], v[2])
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
