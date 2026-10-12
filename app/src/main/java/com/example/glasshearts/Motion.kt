@@ -30,13 +30,14 @@ class Spring(
 object Heartbeat {
     const val PERIOD = 1.4f
     const val FIRST_BEAT = 0.10f
+    const val SECOND_BEAT = 0.30f
 
     fun phase(t: Float): Float = (t % PERIOD) / PERIOD
 
     /** Pulse strength in 0..1 for the given time in seconds. */
     fun pulse(t: Float): Float {
         val p = phase(t)
-        return gauss(p, FIRST_BEAT, 0.045f) + 0.62f * gauss(p, 0.30f, 0.05f)
+        return gauss(p, FIRST_BEAT, 0.045f) + 0.62f * gauss(p, SECOND_BEAT, 0.05f)
     }
 
     private fun gauss(x: Float, center: Float, width: Float): Float {
